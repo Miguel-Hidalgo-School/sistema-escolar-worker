@@ -46,9 +46,17 @@ export default {
         }
       );
 
-      const data = await geminiRes.json();
-      if (!geminiRes.ok) {
-        return jsonResponse({ error: 'Gemini devolvió un error', detalle: data }, 502);
+      const rawText = await geminiRes.text();
+      let data = null;
+      try { data = rawText ? JSON.parse(rawText) : null; } catch (e) { /* dejamos data en null, se reporta abajo */ }
+
+      if (!geminiRes.ok || data === null) {
+        return jsonResponse({
+          error: 'Gemini devolvió un error',
+          status: geminiRes.status,
+          statusText: geminiRes.statusText,
+          cuerpoCrudo: rawText ? rawText.slice(0, 2000) : '(cuerpo vacío)'
+        }, 502);
       }
 
       const texto = extraerTexto(data);
