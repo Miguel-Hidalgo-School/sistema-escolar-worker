@@ -8,13 +8,19 @@
 // conectado directo a este mismo Worker (se activa como un "Binding" en la
 // configuración de Cloudflare, ver más abajo), y tiene una capa gratuita amplia
 // (10,000 "Neurons" gratis al día) que le sobra a un solo colegio.
-const AI_MODEL = '@cf/meta/llama-3.1-8b-instruct'; // modelo gratuito de Cloudflare, bueno en español
+const AI_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'; // modelo gratuito de Cloudflare, bueno en español (confirmado en el catálogo gratuito vigente)
 
 // Cambia este texto cada vez que subas una corrección importante — así, con solo
 // abrir la URL del Worker directo en el navegador (sin pasar por test-worker.html),
 // puedes confirmar de inmediato si Cloudflare ya está corriendo el código nuevo,
 // sin tener que andar buscando la pestaña de "Deployments".
-const VERSION_WORKER = 'cloudflare-workers-ai-v1 (2026-09-06, sin depender de Gemini)';
+// NOTA: el catálogo de modelos gratuitos de Cloudflare cambia con el tiempo (ya nos
+// pasó una vez: llama-3.1-8b-instruct fue retirado el 30 de mayo de 2026). Si en el
+// futuro este Worker vuelve a fallar con un error de "deprecated" o "model not
+// found", la solución es la misma: cambiar AI_MODEL de arriba por el modelo vigente
+// que indique https://developers.cloudflare.com/workers-ai/models/ (categoría
+// "Text Generation"), sin tocar nada más del código.
+const VERSION_WORKER = 'cloudflare-workers-ai-v2 (2026-09-06, llama-3.3-70b tras retiro del 3.1-8b)';
 
 export default {
   async fetch(request, env) {
