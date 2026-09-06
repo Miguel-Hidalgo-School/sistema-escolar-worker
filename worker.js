@@ -8,7 +8,7 @@
 // conectado directo a este mismo Worker (se activa como un "Binding" en la
 // configuración de Cloudflare, ver más abajo), y tiene una capa gratuita amplia
 // (10,000 "Neurons" gratis al día) que le sobra a un solo colegio.
-const AI_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'; // modelo gratuito de Cloudflare, bueno en español (confirmado en el catálogo gratuito vigente)
+const AI_MODEL = '@cf/openai/gpt-oss-120b'; // modelo gratuito de Cloudflare (120B parámetros, de OpenAI) — más capaz que llama-3.3-70b para tareas de redacción
 
 // Cambia este texto cada vez que subas una corrección importante — así, con solo
 // abrir la URL del Worker directo en el navegador (sin pasar por test-worker.html),
@@ -20,7 +20,7 @@ const AI_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'; // modelo gratuito 
 // found", la solución es la misma: cambiar AI_MODEL de arriba por el modelo vigente
 // que indique https://developers.cloudflare.com/workers-ai/models/ (categoría
 // "Text Generation"), sin tocar nada más del código.
-const VERSION_WORKER = 'cloudflare-workers-ai-v4 (2026-09-06, ajustado a lectoescritura inicial en 1°-2° primaria)';
+const VERSION_WORKER = 'cloudflare-workers-ai-v5 (2026-09-06, gpt-oss-120b en vez de llama-3.3-70b)';
 
 export default {
   async fetch(request, env) {
