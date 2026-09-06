@@ -8,7 +8,7 @@ const GEMINI_MODEL = 'gemini-2.5-flash'; // modelo gratuito de Google
 // abrir la URL del Worker directo en el navegador (sin pasar por test-worker.html),
 // puedes confirmar de inmediato si Cloudflare ya está corriendo el código nuevo,
 // sin tener que andar buscando la pestaña de "Deployments".
-const VERSION_WORKER = 'generateContent-v3 (2026-09-06, se revirtió la Interactions API por su bug de 404 con llave simple)';
+const VERSION_WORKER = 'openai-compatible-v4 (2026-09-06, probando auth Bearer)';
 
 export default {
   async fetch(request, env) {
@@ -40,23 +40,28 @@ export default {
     }
 
     try {
-      // NOTA (2026-09-06): se intentó migrar a la nueva Interactions API
-      // (v1beta2/interactions), pero Google tiene un problema conocido y sin
-      // resolver: esa API regresa 404 vacío cuando se usa con una llave simple
-      // (x-goog-api-key) en vez de credenciales completas de Google Cloud
-      // (proyecto + ubicación + OAuth). Como generateContent sigue totalmente
-      // soportado según la documentación oficial de Google, se regresó a este
-      // endpoint clásico, que sí funciona bien con una llave simple.
+      // NOTA (2026-09-06): se probaron dos endpoints con esta llave "AQ." (Auth
+      // key) llamados por HTTP directo (como hace este Worker) y ambos fallaron:
+      // - Interactions API (v1beta2/interactions): 404 vacío
+      // - generateContent con header x-goog-api-key: "API key not valid"
+      // La llave sí funciona bien probada directo en Google AI Studio, así que el
+      // problema es específico de la autenticación por header x-goog-api-key vía
+      // HTTP directo con este tipo de llave (bug conocido, reportado por otros
+      // desarrolladores). Se prueba ahora el endpoint compatible con OpenAI de
+      // Gemini, que usa autenticación "Authorization: Bearer" en vez de
+      // "x-goog-api-key" — es una ruta distinta dentro de la infraestructura de
+      // Google y puede no tener el mismo problema.
       const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+        'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-goog-api-key': env.GEMINI_API_KEY
+            'Authorization': `Bearer ${env.GEMINI_API_KEY}`
           },
           body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }]
+            model: GEMINI_MODEL,
+            messages: [{ role: 'user', content: prompt }]
           })
         }
       );
@@ -74,7 +79,7 @@ export default {
         }, 502);
       }
 
-      const texto = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const texto = data?.choices?.[0]?.message?.content || '';
       return jsonResponse({ texto });
     } catch (err) {
       return jsonResponse({ error: 'No se pudo contactar a Gemini', detalle: String(err) }, 500);
