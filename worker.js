@@ -4,11 +4,23 @@
 
 const GEMINI_MODEL = 'gemini-2.5-flash'; // modelo gratuito de Google
 
+// Cambia este texto cada vez que subas una corrección importante — así, con solo
+// abrir la URL del Worker directo en el navegador (sin pasar por test-worker.html),
+// puedes confirmar de inmediato si Cloudflare ya está corriendo el código nuevo,
+// sin tener que andar buscando la pestaña de "Deployments".
+const VERSION_WORKER = 'interactions-api-v2 (2026-09-06, con diagnóstico de cuerpoCrudo)';
+
 export default {
   async fetch(request, env) {
     // Responder a la verificación previa (CORS) que hace el navegador
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders() });
+    }
+
+    // Al abrir la URL directo en el navegador (GET), regresa solo la versión —
+    // así puedes confirmar el despliegue sin usar test-worker.html.
+    if (request.method === 'GET') {
+      return jsonResponse({ version: VERSION_WORKER });
     }
 
     if (request.method !== 'POST') {
