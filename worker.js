@@ -20,7 +20,7 @@ const AI_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'; // modelo gratuito 
 // found", la solución es la misma: cambiar AI_MODEL de arriba por el modelo vigente
 // que indique https://developers.cloudflare.com/workers-ai/models/ (categoría
 // "Text Generation"), sin tocar nada más del código.
-const VERSION_WORKER = 'cloudflare-workers-ai-v2 (2026-09-06, llama-3.3-70b tras retiro del 3.1-8b)';
+const VERSION_WORKER = 'cloudflare-workers-ai-v4 (2026-09-06, ajustado a lectoescritura inicial en 1°-2° primaria)';
 
 export default {
   async fetch(request, env) {
@@ -63,7 +63,12 @@ export default {
     try {
       const resultado = await env.AI.run(AI_MODEL, {
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 300
+        max_tokens: 300,
+        // Temperatura más alta = menos determinista. Sin esto, el modelo puede
+        // regresar una redacción muy parecida (o idéntica) cada vez que se le
+        // pide lo mismo, que es justo lo que no se quiere en el botón
+        // "Sugerir con IA" cuando se le da clic varias veces seguidas.
+        temperature: 0.9
       });
       const texto = (resultado && resultado.response) ? resultado.response.trim() : '';
       return jsonResponse({ texto });
@@ -94,16 +99,16 @@ ${listaAlumnos}`;
   }
 
   if (task === 'formativo_sugerencia') {
-    const { campo, nivel, alumno, grado, comentariosExistentes } = body;
+    const { campo, nivel, alumno, grado, comentariosExistentes, comentarioAnterior } = body;
     const nivelTexto = { verde: 'nivel esperado', amarillo: 'en desarrollo', rojo: 'requiere apoyo' }[nivel] || nivel;
-    return `Eres un docente mexicano de educación básica redactando una evaluación formativa. Escribe SOLO un comentario breve (máximo 2 renglones, en español, tono constructivo y profesional) para el campo formativo o aspecto "${campo}" de la o el alumno ${alumno || ''} (${grado || ''}), cuyo nivel de logro es "${nivelTexto}". ${comentariosExistentes ? `Toma en cuenta que ya se escribió esto para otro aspecto, para no repetir frases: "${comentariosExistentes}".` : ''} No agregues saludo, ni el nombre del alumno, ni explicaciones extra — solo el comentario.`;
+    return `Eres un docente mexicano de educación básica redactando una evaluación formativa. Escribe SOLO un comentario breve (máximo 2 renglones, en español, tono constructivo y profesional) para el campo formativo o aspecto "${campo}" de la o el alumno ${alumno || ''} (${grado || ''}), cuyo nivel de logro es "${nivelTexto}". Ajusta el comentario a lo que realmente se espera en ese grado: por ejemplo, en 1° y 2° de primaria los niños apenas están adquiriendo la lectoescritura (aprendiendo a leer y escribir), así que no des por hecho que ya leen o escriben con fluidez — describe su proceso inicial (reconocimiento de letras, sonidos, trazos, etc.) en vez de exigir dominio. ${comentariosExistentes ? `Toma en cuenta que ya se escribió esto para otro aspecto, para no repetir frases: "${comentariosExistentes}".` : ''} ${comentarioAnterior ? `Ya se generó antes este otro comentario para el mismo aspecto y no convenció, así que redáctalo de forma distinta, con otras palabras y otro enfoque, sin repetir su estructura ni sus frases: "${comentarioAnterior}".` : ''} No agregues saludo, ni el nombre del alumno, ni explicaciones extra — solo el comentario.`;
   }
 
   if (task === 'formativo_fortalezas_areas') {
-    const { criterios, campo } = body; // campo: 'fortalezas' | 'areasOportunidad'
+    const { criterios, campo, textoAnterior, grado } = body; // campo: 'fortalezas' | 'areasOportunidad'
     const resumenCriterios = (criterios || []).map(c => `- ${c.nombre}: ${({verde:'nivel esperado',amarillo:'en desarrollo',rojo:'requiere apoyo'})[c.nivel] || c.nivel}${c.comentario ? ' — ' + c.comentario : ''}`).join('\n');
     const pedir = campo === 'areasOportunidad' ? 'áreas de oportunidad (lo que necesita reforzar)' : 'fortalezas (lo que hace bien)';
-    return `Eres un docente mexicano de educación básica. A partir de esta evaluación por aspecto de un alumno, redacta de 2 a 3 ${pedir}, en español, una por línea, en tono constructivo. Responde SOLO con las líneas, sin numerarlas ni agregar explicaciones.
+    return `Eres un docente mexicano de educación básica. A partir de esta evaluación por aspecto de un alumno de ${grado || 'grado no especificado'}, redacta de 2 a 3 ${pedir}, en español, una por línea, en tono constructivo. Ajusta las expectativas a lo que realmente corresponde a ese grado: por ejemplo, en 1° y 2° de primaria los niños apenas están adquiriendo la lectoescritura, así que no des por hecho que ya leen o escriben con fluidez. Responde SOLO con las líneas, sin numerarlas ni agregar explicaciones. ${textoAnterior ? `Ya se generó antes este texto y no convenció, así que redáctalo distinto, con otras palabras: "${textoAnterior}".` : ''}
 
 Evaluación por aspecto:
 ${resumenCriterios}`;
