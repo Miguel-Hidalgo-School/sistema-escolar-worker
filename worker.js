@@ -20,7 +20,7 @@ const AI_MODEL = '@cf/openai/gpt-oss-120b'; // modelo gratuito de Cloudflare (12
 // found", la solución es la misma: cambiar AI_MODEL de arriba por el modelo vigente
 // que indique https://developers.cloudflare.com/workers-ai/models/ (categoría
 // "Text Generation"), sin tocar nada más del código.
-const VERSION_WORKER = 'cloudflare-workers-ai-v5 (2026-09-06, gpt-oss-120b en vez de llama-3.3-70b)';
+const VERSION_WORKER = 'cloudflare-workers-ai-v6 (2026-09-06, gpt-oss-120b: lee choices[].message.content además de .response)';
 
 export default {
   async fetch(request, env) {
@@ -70,7 +70,18 @@ export default {
         // "Sugerir con IA" cuando se le da clic varias veces seguidas.
         temperature: 0.9
       });
-      const texto = (resultado && resultado.response) ? resultado.response.trim() : '';
+      // Distintos modelos de Workers AI regresan el texto en distinta forma:
+      // los de la familia Llama usan { response: "..." }, mientras que los
+      // compatibles con el formato de OpenAI (como gpt-oss) usan
+      // { choices: [{ message: { content: "..." } }] }. Se revisan ambas.
+      const texto = (
+        resultado?.response ||
+        resultado?.choices?.[0]?.message?.content ||
+        ''
+      ).trim();
+      if (!texto) {
+        return jsonResponse({ error: 'La IA respondió, pero sin texto reconocible', respuestaCruda: resultado }, 502);
+      }
       return jsonResponse({ texto });
     } catch (err) {
       return jsonResponse({ error: 'No se pudo generar el texto con la IA', detalle: String(err) }, 500);
