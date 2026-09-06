@@ -1,14 +1,20 @@
-// Worker: puente seguro entre el Sistema Escolar y Gemini.
-// La llave de Gemini NUNCA va aquí en el código — se guarda aparte,
-// como "Secreto" en la configuración del Worker (Settings > Variables and Secrets).
-
-const GEMINI_MODEL = 'gemini-2.5-flash'; // modelo gratuito de Google
+// Worker: puente entre el Sistema Escolar y una IA para generar sugerencias de texto.
+// Usa Cloudflare Workers AI (el propio servicio de IA de Cloudflare), NO Gemini.
+// ¿Por qué el cambio? Gemini migró sus llaves de API al formato nuevo "AQ." y ese
+// formato no funciona con llamadas HTTP directas (ni con x-goog-api-key, ni con
+// ?key=, ni con Authorization: Bearer) — es un problema de Google, no de este código,
+// y muchos desarrolladores lo están reportando en su foro oficial sin solución aún.
+// Cloudflare Workers AI evita todo esto: no necesita ninguna llave externa, ya viene
+// conectado directo a este mismo Worker (se activa como un "Binding" en la
+// configuración de Cloudflare, ver más abajo), y tiene una capa gratuita amplia
+// (10,000 "Neurons" gratis al día) que le sobra a un solo colegio.
+const AI_MODEL = '@cf/meta/llama-3.1-8b-instruct'; // modelo gratuito de Cloudflare, bueno en español
 
 // Cambia este texto cada vez que subas una corrección importante — así, con solo
 // abrir la URL del Worker directo en el navegador (sin pasar por test-worker.html),
 // puedes confirmar de inmediato si Cloudflare ya está corriendo el código nuevo,
 // sin tener que andar buscando la pestaña de "Deployments".
-const VERSION_WORKER = 'openai-compatible-v4 (2026-09-06, probando auth Bearer)';
+const VERSION_WORKER = 'cloudflare-workers-ai-v1 (2026-09-06, sin depender de Gemini)';
 
 export default {
   async fetch(request, env) {
@@ -39,50 +45,24 @@ export default {
       return jsonResponse({ error: 'Falta indicar la tarea (task) o los datos' }, 400);
     }
 
+    // Si esto falla con "AI is not defined" o similar, falta activar el Binding:
+    // en Cloudflare → tu Worker → Settings → Bindings → Add → "Workers AI" →
+    // nómbralo exactamente "AI" → Guardar y volver a desplegar.
+    if (!env.AI) {
+      return jsonResponse({
+        error: 'Falta activar el Binding de Workers AI en este Worker (Settings → Bindings → Add → Workers AI, nómbralo "AI").'
+      }, 500);
+    }
+
     try {
-      // NOTA (2026-09-06): se probaron dos endpoints con esta llave "AQ." (Auth
-      // key) llamados por HTTP directo (como hace este Worker) y ambos fallaron:
-      // - Interactions API (v1beta2/interactions): 404 vacío
-      // - generateContent con header x-goog-api-key: "API key not valid"
-      // La llave sí funciona bien probada directo en Google AI Studio, así que el
-      // problema es específico de la autenticación por header x-goog-api-key vía
-      // HTTP directo con este tipo de llave (bug conocido, reportado por otros
-      // desarrolladores). Se prueba ahora el endpoint compatible con OpenAI de
-      // Gemini, que usa autenticación "Authorization: Bearer" en vez de
-      // "x-goog-api-key" — es una ruta distinta dentro de la infraestructura de
-      // Google y puede no tener el mismo problema.
-      const geminiRes = await fetch(
-        'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${env.GEMINI_API_KEY}`
-          },
-          body: JSON.stringify({
-            model: GEMINI_MODEL,
-            messages: [{ role: 'user', content: prompt }]
-          })
-        }
-      );
-
-      const rawText = await geminiRes.text();
-      let data = null;
-      try { data = rawText ? JSON.parse(rawText) : null; } catch (e) { /* dejamos data en null, se reporta abajo */ }
-
-      if (!geminiRes.ok || data === null) {
-        return jsonResponse({
-          error: 'Gemini devolvió un error',
-          status: geminiRes.status,
-          statusText: geminiRes.statusText,
-          cuerpoCrudo: rawText ? rawText.slice(0, 2000) : '(cuerpo vacío)'
-        }, 502);
-      }
-
-      const texto = data?.choices?.[0]?.message?.content || '';
+      const resultado = await env.AI.run(AI_MODEL, {
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 300
+      });
+      const texto = (resultado && resultado.response) ? resultado.response.trim() : '';
       return jsonResponse({ texto });
     } catch (err) {
-      return jsonResponse({ error: 'No se pudo contactar a Gemini', detalle: String(err) }, 500);
+      return jsonResponse({ error: 'No se pudo generar el texto con la IA', detalle: String(err) }, 500);
     }
   }
 };

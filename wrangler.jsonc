@@ -1,5 +1,10 @@
 {
   "name": "sistema-escolar-ia",
   "main": "worker.js",
-  "compatibility_date": "2026-01-01"
+  "compatibility_date": "2026-01-01",
+  // Binding de Workers AI: activa env.AI dentro de worker.js, sin necesitar
+  // ninguna llave externa (reemplaza la llamada que antes iba a Gemini).
+  "ai": {
+    "binding": "AI"
+  }
 }
