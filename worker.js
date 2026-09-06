@@ -8,7 +8,7 @@ const GEMINI_MODEL = 'gemini-2.5-flash'; // modelo gratuito de Google
 // abrir la URL del Worker directo en el navegador (sin pasar por test-worker.html),
 // puedes confirmar de inmediato si Cloudflare ya está corriendo el código nuevo,
 // sin tener que andar buscando la pestaña de "Deployments".
-const VERSION_WORKER = 'interactions-api-v2 (2026-09-06, con diagnóstico de cuerpoCrudo)';
+const VERSION_WORKER = 'generateContent-v3 (2026-09-06, se revirtió la Interactions API por su bug de 404 con llave simple)';
 
 export default {
   async fetch(request, env) {
@@ -40,11 +40,15 @@ export default {
     }
 
     try {
-      // Google movió el endpoint de generación a la Interactions API. Las llaves
-      // nuevas tipo "AQ." (Auth keys) ya no funcionan con el endpoint viejo
-      // ":generateContent" — por eso el Worker dejó de responder.
+      // NOTA (2026-09-06): se intentó migrar a la nueva Interactions API
+      // (v1beta2/interactions), pero Google tiene un problema conocido y sin
+      // resolver: esa API regresa 404 vacío cuando se usa con una llave simple
+      // (x-goog-api-key) en vez de credenciales completas de Google Cloud
+      // (proyecto + ubicación + OAuth). Como generateContent sigue totalmente
+      // soportado según la documentación oficial de Google, se regresó a este
+      // endpoint clásico, que sí funciona bien con una llave simple.
       const geminiRes = await fetch(
-        'https://generativelanguage.googleapis.com/v1beta2/interactions',
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
         {
           method: 'POST',
           headers: {
@@ -52,8 +56,7 @@ export default {
             'x-goog-api-key': env.GEMINI_API_KEY
           },
           body: JSON.stringify({
-            model: GEMINI_MODEL,
-            input: prompt
+            contents: [{ role: 'user', parts: [{ text: prompt }] }]
           })
         }
       );
@@ -71,26 +74,13 @@ export default {
         }, 502);
       }
 
-      const texto = extraerTexto(data);
+      const texto = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
       return jsonResponse({ texto });
     } catch (err) {
       return jsonResponse({ error: 'No se pudo contactar a Gemini', detalle: String(err) }, 500);
     }
   }
 };
-
-// La Interactions API regresa la respuesta como una línea de tiempo de "steps"
-// (pensamientos, llamadas a herramientas, texto del modelo, etc.), no como el
-// "candidates[0].content.parts[0].text" de antes. Aquí se junta el texto de
-// todos los pasos tipo "model_output", en orden.
-function extraerTexto(data) {
-  const steps = data?.steps || [];
-  return steps
-    .filter(s => s.type === 'model_output')
-    .flatMap(s => (s.content || []).filter(c => c.type === 'text').map(c => c.text))
-    .join('')
-    .trim();
-}
 
 // Arma la instrucción exacta que se le manda a la IA, según qué módulo
 // del Sistema Escolar esté llamando al Worker.
