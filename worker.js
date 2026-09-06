@@ -28,8 +28,11 @@ export default {
     }
 
     try {
+      // Google movió el endpoint de generación a la Interactions API. Las llaves
+      // nuevas tipo "AQ." (Auth keys) ya no funcionan con el endpoint viejo
+      // ":generateContent" — por eso el Worker dejó de responder.
       const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+        'https://generativelanguage.googleapis.com/v1beta2/interactions',
         {
           method: 'POST',
           headers: {
@@ -37,7 +40,8 @@ export default {
             'x-goog-api-key': env.GEMINI_API_KEY
           },
           body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }]
+            model: GEMINI_MODEL,
+            input: prompt
           })
         }
       );
@@ -47,13 +51,26 @@ export default {
         return jsonResponse({ error: 'Gemini devolvió un error', detalle: data }, 502);
       }
 
-      const texto = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const texto = extraerTexto(data);
       return jsonResponse({ texto });
     } catch (err) {
       return jsonResponse({ error: 'No se pudo contactar a Gemini', detalle: String(err) }, 500);
     }
   }
 };
+
+// La Interactions API regresa la respuesta como una línea de tiempo de "steps"
+// (pensamientos, llamadas a herramientas, texto del modelo, etc.), no como el
+// "candidates[0].content.parts[0].text" de antes. Aquí se junta el texto de
+// todos los pasos tipo "model_output", en orden.
+function extraerTexto(data) {
+  const steps = data?.steps || [];
+  return steps
+    .filter(s => s.type === 'model_output')
+    .flatMap(s => (s.content || []).filter(c => c.type === 'text').map(c => c.text))
+    .join('')
+    .trim();
+}
 
 // Arma la instrucción exacta que se le manda a la IA, según qué módulo
 // del Sistema Escolar esté llamando al Worker.
