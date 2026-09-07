@@ -20,7 +20,7 @@ const AI_MODEL = '@cf/openai/gpt-oss-120b'; // modelo gratuito de Cloudflare (12
 // found", la solución es la misma: cambiar AI_MODEL de arriba por el modelo vigente
 // que indique https://developers.cloudflare.com/workers-ai/models/ (categoría
 // "Text Generation"), sin tocar nada más del código.
-const VERSION_WORKER = 'cloudflare-workers-ai-v8 (2026-09-06, agregado campo de contexto libre del docente, con prioridad)';
+const VERSION_WORKER = 'cloudflare-workers-ai-v9 (2026-09-07, reforzada regla de nivel-de-logro realista con ejemplos y auto-revisión, temperatura bajada a 0.6)';
 
 export default {
   async fetch(request, env) {
@@ -64,11 +64,12 @@ export default {
       const resultado = await env.AI.run(AI_MODEL, {
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 300,
-        // Temperatura más alta = menos determinista. Sin esto, el modelo puede
-        // regresar una redacción muy parecida (o idéntica) cada vez que se le
-        // pide lo mismo, que es justo lo que no se quiere en el botón
-        // "Sugerir con IA" cuando se le da clic varias veces seguidas.
-        temperature: 0.9
+        // Temperatura moderada: con 0.9 el modelo "improvisaba" y a veces
+        // ignoraba la regla de nivel-de-logro realista (le atribuía al alumno
+        // habilidades que su nivel no permite). 0.6 sigue dando variación entre
+        // clics repetidos de "Sugerir con IA", pero respeta mejor las reglas
+        // estrictas del prompt (ver REGLA #1 en construirPrompt).
+        temperature: 0.6
       });
       // Distintos modelos de Workers AI regresan el texto en distinta forma:
       // los de la familia Llama usan { response: "..." }, mientras que los
@@ -112,17 +113,55 @@ ${listaAlumnos}`;
   if (task === 'formativo_sugerencia') {
     const { campo, nivel, alumno, grado, comentariosExistentes, comentarioAnterior, contexto } = body;
     const nivelTexto = { verde: 'nivel esperado', amarillo: 'en desarrollo', rojo: 'requiere apoyo' }[nivel] || nivel;
-    return `Eres un docente mexicano de educación básica redactando una evaluación formativa. Escribe SOLO un comentario breve (máximo 2 renglones, en español, tono constructivo y profesional) para el campo formativo o aspecto "${campo}" de la o el alumno ${alumno || ''} (${grado || ''}), cuyo nivel de logro es "${nivelTexto}". Ajusta el comentario a lo que REALMENTE puede hacer un niño de ese grado, sin exagerar sus habilidades: en 1° de primaria (sobre todo al inicio del ciclo), muchos alumnos todavía no saben leer ni escribir de forma independiente, ni siquiera copiar un texto del pizarrón — están apenas en trazos, reconocimiento de vocales o de su nombre, coordinación motriz fina, atención y seguimiento de instrucciones orales sencillas. NO le atribuyas "lectura de palabras", "comprensión de textos", "escritura de oraciones" ni nada que dé por hecho que ya lee o escribe, a menos que el nivel de logro indicado sea "nivel esperado" para ese aspecto específico. ${contexto ? `IMPORTANTE — así está el grupo en realidad ahora mismo, según quien lo evalúa, y esto tiene PRIORIDAD sobre cualquier suposición general de arriba: "${contexto}".` : ''} ${comentariosExistentes ? `Toma en cuenta que ya se escribió esto para otro aspecto, para no repetir frases: "${comentariosExistentes}".` : ''} ${comentarioAnterior ? `Ya se generó antes este otro comentario para el mismo aspecto y no convenció, así que redáctalo de forma distinta, con otras palabras y otro enfoque, sin repetir su estructura ni sus frases: "${comentarioAnterior}".` : ''} No agregues saludo, ni el nombre del alumno, ni explicaciones extra — solo el comentario.`;
+    return `Eres un docente mexicano de educación básica con 20 años de experiencia redactando evaluaciones formativas oficiales.
+
+REGLA #1, INQUEBRANTABLE — LÉELA DOS VECES ANTES DE ESCRIBIR:
+El nivel de logro de este alumno en este aspecto es "${nivelTexto}". SOLO puedes describir lo que ese nivel permite:
+- "requiere apoyo" (rojo) = apenas está empezando, batalla con esto, NO lo domina, necesita ayuda directa y constante del docente. Describe el intento, el proceso o la dificultad — nunca el logro terminado.
+- "en desarrollo" (amarillo) = lo logra A VECES, de forma inconsistente, con apoyo ocasional. Va mejorando pero todavía no es autónomo.
+- "nivel esperado" (verde) = lo logra de forma consistente y autónoma para su edad y grado.
+Está PROHIBIDO describir una habilidad más avanzada que la que el nivel indicado permite, sin importar el aspecto de que se trate (lectura, escritura, matemáticas, conducta, motricidad, lo que sea). Si tienes duda, describe MENOS habilidad, no más.
+
+EJEMPLO (aspecto "Expresión escrita", nivel "requiere apoyo"):
+❌ MAL: "El alumno redacta correctamente sus ideas con oraciones completas." (le atribuye una habilidad que el nivel "requiere apoyo" no permite)
+✅ BIEN: "Kevin aún requiere apoyo constante para expresar sus ideas por escrito; con ayuda directa logra trazar letras y palabras cortas."
+
+Contexto adicional de este caso:
+- Aspecto a comentar: "${campo}"
+- Alumno(a): ${alumno || 'sin nombre'}
+- Grado: ${grado || 'no especificado'}
+${contexto ? `- PRIORIDAD MÁXIMA — así está el grupo en realidad ahora mismo, según quien lo evalúa, por encima de cualquier suposición general: "${contexto}"` : ''}
+${comentariosExistentes ? `- Ya se escribió esto para otro aspecto del mismo alumno; no repitas frases: "${comentariosExistentes}"` : ''}
+${comentarioAnterior ? `- Este comentario ya se generó antes para el mismo aspecto y no convenció; redáctalo distinto, con otras palabras y otro enfoque, sin repetir su estructura: "${comentarioAnterior}"` : ''}
+
+TAREA: Escribe SOLO el comentario final (máximo 2 renglones, en español, tono profesional y constructivo, propio de un docente mexicano). Sin saludo, sin repetir el nombre del alumno al inicio, sin explicaciones, sin comillas. Antes de responder, revisa tu propio comentario contra la REGLA #1 y corrígelo si le atribuye más de lo que el nivel "${nivelTexto}" permite.`;
   }
 
   if (task === 'formativo_fortalezas_areas') {
     const { criterios, campo, textoAnterior, grado, contexto } = body; // campo: 'fortalezas' | 'areasOportunidad'
     const resumenCriterios = (criterios || []).map(c => `- ${c.nombre}: ${({verde:'nivel esperado',amarillo:'en desarrollo',rojo:'requiere apoyo'})[c.nivel] || c.nivel}${c.comentario ? ' — ' + c.comentario : ''}`).join('\n');
     const pedir = campo === 'areasOportunidad' ? 'áreas de oportunidad (lo que necesita reforzar)' : 'fortalezas (lo que hace bien)';
-    return `Eres un docente mexicano de educación básica. A partir de esta evaluación por aspecto de un alumno de ${grado || 'grado no especificado'}, redacta de 2 a 3 ${pedir}, en español, una por línea, en tono constructivo. Ajusta las expectativas a lo que REALMENTE puede hacer un niño de ese grado, sin exagerar: en 1° de primaria (sobre todo al inicio del ciclo), muchos alumnos todavía no saben leer ni escribir de forma independiente, ni siquiera copiar un texto del pizarrón — están apenas en trazos, reconocimiento de vocales o de su nombre, coordinación motriz fina, atención y seguimiento de instrucciones orales sencillas. NO le atribuyas "lectura de palabras", "comprensión de textos" ni "escritura de oraciones" a menos que el nivel de logro indicado sea "nivel esperado" para ese aspecto específico. ${contexto ? `IMPORTANTE — así está el grupo en realidad ahora mismo, según quien lo evalúa, y esto tiene PRIORIDAD sobre cualquier suposición general de arriba: "${contexto}".` : ''} Responde SOLO con las líneas, sin numerarlas ni agregar explicaciones. ${textoAnterior ? `Ya se generó antes este texto y no convenció, así que redáctalo distinto, con otras palabras: "${textoAnterior}".` : ''}
+    return `Eres un docente mexicano de educación básica con 20 años de experiencia redactando evaluaciones formativas oficiales.
+
+REGLA #1, INQUEBRANTABLE — LÉELA DOS VECES ANTES DE ESCRIBIR:
+Cada aspecto de abajo trae su propio nivel de logro. SOLO puedes describir lo que ese nivel permite:
+- "requiere apoyo" (rojo) = apenas está empezando, batalla con esto, NO lo domina, necesita ayuda directa y constante.
+- "en desarrollo" (amarillo) = lo logra A VECES, de forma inconsistente, con apoyo ocasional.
+- "nivel esperado" (verde) = lo logra de forma consistente y autónoma para su edad y grado.
+Está PROHIBIDO describir, ni siquiera en las "fortalezas", una habilidad más avanzada que la que el nivel de ese aspecto indica. Un aspecto en "requiere apoyo" o "en desarrollo" puede tener una fortaleza legítima (ej. "muestra disposición a intentarlo", "responde bien a la guía del docente"), pero NUNCA se le atribuye el logro completo. Si tienes duda, describe MENOS habilidad, no más.
+
+EJEMPLO (aspecto "Expresión escrita" en "requiere apoyo"):
+❌ MAL (como fortaleza): "Redacta oraciones completas y coherentes." (habilidad que ese nivel no permite)
+✅ BIEN (como fortaleza): "Muestra buena disposición para intentar trazar letras y palabras, aunque aún con apoyo."
+
+Grado: ${grado || 'no especificado'}
+${contexto ? `PRIORIDAD MÁXIMA — así está el grupo en realidad ahora mismo, según quien lo evalúa, por encima de cualquier suposición general: "${contexto}"` : ''}
+${textoAnterior ? `Ya se generó antes este texto y no convenció; redáctalo distinto, con otras palabras: "${textoAnterior}"` : ''}
 
 Evaluación por aspecto:
-${resumenCriterios}`;
+${resumenCriterios}
+
+TAREA: Redacta de 2 a 3 ${pedir}, en español, una por línea, tono profesional y constructivo. Responde SOLO con las líneas, sin numerarlas, sin comillas, sin explicaciones. Antes de responder, revisa cada línea contra la REGLA #1 y corrígela si le atribuye más de lo que el nivel de ese aspecto permite.`;
   }
 
   return null;
