@@ -8,7 +8,17 @@
 // conectado directo a este mismo Worker (se activa como un "Binding" en la
 // configuración de Cloudflare, ver más abajo), y tiene una capa gratuita amplia
 // (10,000 "Neurons" gratis al día) que le sobra a un solo colegio.
-const AI_MODEL = '@cf/openai/gpt-oss-120b'; // modelo gratuito de Cloudflare (120B parámetros, de OpenAI) — más capaz que llama-3.3-70b para tareas de redacción
+//
+// 2026-09-07: se cambió de @cf/openai/gpt-oss-120b a este modelo. gpt-oss-120b es un
+// modelo "de razonamiento": antes de escribir la respuesta final gasta parte de su
+// propio límite de max_tokens "pensando" internamente (invisible para nosotros). Con
+// max_tokens bajo (necesario porque solo pedimos 2-3 renglones), a veces se le acababa
+// el presupuesto pensando y nunca llegaba a escribir el texto final, devolviendo un
+// 502 ("La IA respondió, pero sin texto reconocible") de forma intermitente — a veces
+// funcionaba, a veces no, sin ningún patrón claro para quien lo usaba. Llama 3.3 70B
+// NO tiene esa capa de razonamiento oculta ("reasoning": false en su ficha oficial),
+// así que siempre usa el presupuesto de tokens directo en la respuesta que sí vemos.
+const AI_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'; // modelo gratuito de Cloudflare, sin razonamiento oculto — más predecible para respuestas cortas
 
 // Cambia este texto cada vez que subas una corrección importante — así, con solo
 // abrir la URL del Worker directo en el navegador (sin pasar por test-worker.html),
@@ -19,8 +29,10 @@ const AI_MODEL = '@cf/openai/gpt-oss-120b'; // modelo gratuito de Cloudflare (12
 // futuro este Worker vuelve a fallar con un error de "deprecated" o "model not
 // found", la solución es la misma: cambiar AI_MODEL de arriba por el modelo vigente
 // que indique https://developers.cloudflare.com/workers-ai/models/ (categoría
-// "Text Generation"), sin tocar nada más del código.
-const VERSION_WORKER = 'cloudflare-workers-ai-v9 (2026-09-07, reforzada regla de nivel-de-logro realista con ejemplos y auto-revisión, temperatura bajada a 0.6)';
+// "Text Generation"). Si vuelves a usar un modelo "de razonamiento" (reasoning: true
+// en su ficha), sube max_tokens considerablemente (800+) para dejarle espacio a la
+// parte de "pensar" además de la respuesta final.
+const VERSION_WORKER = 'cloudflare-workers-ai-v10 (2026-09-07, cambiado de gpt-oss-120b a llama-3.3-70b para eliminar los 502 intermitentes por razonamiento oculto)';
 
 export default {
   async fetch(request, env) {
@@ -63,7 +75,7 @@ export default {
     try {
       const resultado = await env.AI.run(AI_MODEL, {
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 300,
+        max_tokens: 400,
         // Temperatura moderada: con 0.9 el modelo "improvisaba" y a veces
         // ignoraba la regla de nivel-de-logro realista (le atribuía al alumno
         // habilidades que su nivel no permite). 0.6 sigue dando variación entre
