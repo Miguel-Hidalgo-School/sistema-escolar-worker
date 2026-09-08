@@ -6,5 +6,20 @@
   // ninguna llave externa (reemplaza la llamada que antes iba a Gemini).
   "ai": {
     "binding": "AI"
+  },
+  // Logs en tiempo real activados, para poder diagnosticar errores desde
+  // el dashboard de Cloudflare (Workers y Pages -> sistema-escolar-ia -> Logs).
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true
+    },
+    "traces": {
+      "enabled": false,
+      "head_sampling_rate": 1,
+      "persist": true
+    }
   }
 }
